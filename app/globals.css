@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --coral: #FF6B6B;
+  --teal-brand: #4ECDC4;
+}
+
+body {
+  background-color: #0F172A;
+  color: #E2E8F0;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: #FF6B6B; }
+  50% { border-color: #ff9999; }
+}
+
+.alert-pulse {
+  animation: pulse-border 1.5s ease-in-out infinite;
+}
