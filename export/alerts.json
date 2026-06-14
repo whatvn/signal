@@ -1,0 +1,13 @@
+[
+  {
+    "id": "01KTZYD238A2NRCXK1H3K05KMN",
+    "rule_name": "fund_loss_spike_1h",
+    "subcategory": "fund_loss",
+    "count": 7,
+    "window_minutes": 60,
+    "threshold": 5,
+    "fired_at": 1781336016,
+    "acknowledged_at": null,
+    "sample_post_ids": "[\"tt_7650147445925596434\",\"tt_7041081001715436802\",\"tt_7077394521717247233\",\"tt_7077394885841669377\",\"tt_7177028113577020699\"]"
+  }
+]

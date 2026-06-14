@@ -16,7 +16,7 @@ async function sfetch(
   try {
     const res = await fetch(url.toString(), {
       headers: {
-        "x-api-key": process.env.social_fetch_api_key ?? "",
+        "x-api-key": process.env.SOCIAL_FETCH_API_KEY ?? "",
       },
       signal: controller.signal,
     });
@@ -79,7 +79,7 @@ export const socialfetch = {
       const params: Record<string, string> = { hashtag, region: "VN" };
       if (cursor) params.cursor = cursor;
 
-      const data = (await sfetch("/v1/tiktok/search/hashtags", params)) as {
+      const data = (await sfetch("/v1/tiktok/search/hashtags", params, 30000)) as {
         data: {
           videos: Array<{
             id: string;
@@ -154,6 +154,7 @@ export const socialfetch = {
             sourceUrl: p.url ?? `https://www.facebook.com/${postId}`,
             rawJson: JSON.stringify(p),
             publishedAt: p.publishTime ?? undefined,
+            feedbackId: p.feedbackId,
           };
         });
 
@@ -188,28 +189,85 @@ export const socialfetch = {
     }
   },
 
-  async getFacebookComments(postUrl: string): Promise<RawComment[]> {
+  async searchThreads(
+    keyword: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<{ posts: RawPost[]; nextCursor: string | null }> {
     try {
+      const toDateStr = (d: Date) => d.toISOString().slice(0, 10);
+      const now = new Date();
+      const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+      const params: Record<string, string> = {
+        query: keyword,
+        startDate: startDate ?? toDateStr(twoDaysAgo),
+        endDate: endDate ?? toDateStr(now),
+      };
+
+      const data = (await sfetch("/v1/threads/search", params, 20000)) as {
+        data?: {
+          posts?: Array<{
+            id?: string;
+            text?: string;
+            url?: string;
+            createdAt?: number;
+            author?: { handle?: string; displayName?: string };
+          }>;
+          page?: { nextCursor: string | null; hasMore: boolean };
+        };
+      };
+
+      const items = data?.data?.posts ?? [];
+      const posts: RawPost[] = items
+        .filter((t) => t.text)
+        .map((t) => {
+          const postId = t.id ?? String(Math.random());
+          const handle = t.author?.handle ?? t.author?.displayName ?? "";
+          return {
+            id: `th_${postId}`,
+            platform: "threads" as const,
+            authorHandle: handle,
+            contentText: t.text ?? "",
+            sourceUrl: t.url ?? `https://www.threads.net/@${handle}/post/${postId}`,
+            rawJson: JSON.stringify(t),
+            publishedAt: t.createdAt ?? undefined,
+          };
+        });
+
+      return { posts, nextCursor: data?.data?.page?.nextCursor ?? null };
+    } catch (err) {
+      console.error("[SocialFetch] Threads search failed:", err);
+      return { posts: [], nextCursor: null };
+    }
+  },
+
+  async getFacebookComments(postUrl: string, feedbackId?: string): Promise<RawComment[]> {
+    try {
+      const params: Record<string, string> = { url: postUrl };
+      if (feedbackId) params.feedbackId = feedbackId;
+
       const data = (await sfetch(
         "/v1/facebook/posts/comments",
-        { url: postUrl },
+        params,
         25000
       )) as {
         data: {
+          lookupStatus?: string;
           comments: Array<{
             id: string;
-            message?: string;
             text?: string;
             author?: { name?: string };
           }>;
         };
       };
 
+      if (data?.data?.lookupStatus === "not_found") return [];
+
       const comments = data?.data?.comments ?? [];
       return comments.map((c) => ({
         id: c.id,
         authorHandle: c.author?.name ?? "",
-        contentText: c.message ?? c.text ?? "",
+        contentText: c.text ?? "",
       }));
     } catch (err) {
       console.error(`[SocialFetch] Facebook comments failed for ${postUrl}:`, err);

@@ -1,6 +1,10 @@
 type Controller = ReadableStreamDefaultController<Uint8Array>;
 
-const controllers = new Set<Controller>();
+// Anchored on globalThis so all Next.js route-handler module instances share one Set.
+const g = globalThis as typeof globalThis & { _sseControllers?: Set<Controller> };
+if (!g._sseControllers) g._sseControllers = new Set();
+const controllers = g._sseControllers;
+
 const encoder = new TextEncoder();
 
 export function addClient(controller: Controller) {

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ZaloPay Social Listening",
+  title: "Signal — Social Listening",
   description: "Real-time social media monitoring for ZaloPay",
 };
 
@@ -13,9 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-slate-900 text-slate-200 antialiased">
-        {children}
-      </body>
+      <body className="min-h-screen antialiased">{children}</body>
     </html>
   );
 }

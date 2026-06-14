@@ -1,0 +1,2 @@
+id,rule_name,subcategory,count,window_minutes,threshold,fired_at,acknowledged_at,sample_post_ids
+01KTZYD238A2NRCXK1H3K05KMN,fund_loss_spike_1h,fund_loss,7,60,5,1781336016,,"[""tt_7650147445925596434"",""tt_7041081001715436802"",""tt_7077394521717247233"",""tt_7077394885841669377"",""tt_7177028113577020699""]"

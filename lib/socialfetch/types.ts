@@ -1,11 +1,12 @@
 export interface RawPost {
   id: string;
-  platform: "facebook" | "tiktok";
+  platform: "facebook" | "tiktok" | "threads";
   authorHandle: string;
   contentText: string;
   sourceUrl: string;
   rawJson: string;
   publishedAt?: number;
+  feedbackId?: string;
 }
 
 export interface RawComment {

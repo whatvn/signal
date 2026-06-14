@@ -5,17 +5,26 @@ import { classifyStage } from "./classify";
 import { alertStage } from "./alert";
 
 type StageStatus = "idle" | "running" | "done" | "error";
+export type LogLevel = "info" | "warn" | "error";
+export type Emit = (level: LogLevel, message: string) => void;
 
 function emitStage(stage: string, status: StageStatus, meta?: Record<string, unknown>) {
   broadcast({ type: "pipeline_stage", stage, status, ...meta });
+}
+
+function makeEmit(stage: string): Emit {
+  return (level, message) => {
+    broadcast({ type: "pipeline_log", stage, level, message, ts: Date.now() });
+  };
 }
 
 export async function runPipeline(keyword = "ZaloPay"): Promise<void> {
   console.log(`[Pipeline] Starting run for keyword: ${keyword}`);
 
   try {
+    const fetchEmit = makeEmit("fetch");
     emitStage("fetch", "running");
-    const newPosts = await fetchStage(keyword);
+    const newPosts = await fetchStage(keyword, fetchEmit);
     emitStage("fetch", "done", { count: newPosts.length });
 
     if (newPosts.length === 0) {
@@ -26,16 +35,19 @@ export async function runPipeline(keyword = "ZaloPay"): Promise<void> {
       return;
     }
 
+    const extractEmit = makeEmit("extract");
     emitStage("extract", "running");
-    const postsWithComments = await extractStage(newPosts);
+    const postsWithComments = await extractStage(newPosts, extractEmit);
     emitStage("extract", "done", { count: postsWithComments.length });
 
+    const classifyEmit = makeEmit("classify");
     emitStage("classify", "running");
-    await classifyStage(postsWithComments);
+    await classifyStage(postsWithComments, classifyEmit);
     emitStage("classify", "done", { count: postsWithComments.length });
 
+    const alertEmit = makeEmit("alert");
     emitStage("alert", "running");
-    await alertStage();
+    await alertStage(alertEmit);
     emitStage("alert", "done");
 
     console.log("[Pipeline] Run complete");

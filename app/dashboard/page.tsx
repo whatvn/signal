@@ -1,32 +1,110 @@
-import { LiveFeed } from "@/components/dashboard/LiveFeed";
-import { AlertRail } from "@/components/dashboard/AlertRail";
-import { MetricsChart } from "@/components/dashboard/MetricsChart";
-import { AppHeader } from "@/components/layout/AppHeader";
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { TopBar } from "@/components/signal/TopBar";
+import { SummaryBar } from "@/components/signal/SummaryBar";
+import { PlatformBlock, PlatformData } from "@/components/signal/PlatformBlock";
+
+interface DashboardData {
+  summary: {
+    totalSignals: number;
+    negativeCount: number;
+    negativeChange: number;
+    positiveCount: number;
+    positiveChange: number;
+    alertsCount: number;
+    criticalAlert: string | null;
+  };
+  facebook: PlatformData;
+  tiktok: PlatformData;
+  threads: PlatformData;
+}
+
+const EMPTY_PLATFORM: PlatformData = {
+  postsCount: 0,
+  commentsCount: 0,
+  negativeCount: 0,
+  positiveCount: 0,
+  alertsCount: 0,
+  categories: [],
+  topPosts: [],
+  sparkline: [],
+};
+
+const EMPTY_DATA: DashboardData = {
+  summary: {
+    totalSignals: 0,
+    negativeCount: 0,
+    negativeChange: 0,
+    positiveCount: 0,
+    positiveChange: 0,
+    alertsCount: 0,
+    criticalAlert: null,
+  },
+  facebook: EMPTY_PLATFORM,
+  tiktok: EMPTY_PLATFORM,
+  threads: EMPTY_PLATFORM,
+};
 
 export default function DashboardPage() {
+  const [window, setWindow] = useState("24h");
+  const [data, setData] = useState<DashboardData>(EMPTY_DATA);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    fetch(`/api/dashboard?window=${window}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setData(d);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [window]);
+
+  useEffect(() => {
+    setLoading(true);
+    load();
+  }, [load]);
+
+  function handleWindowChange(w: string) {
+    setWindow(w);
+  }
+
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col">
-      <AppHeader />
+    <div style={{ minHeight: "100vh", backgroundColor: "#F4F5F7", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+      <TopBar window={window} onWindowChange={handleWindowChange} onScanComplete={load} />
 
-      {/* Metrics bar */}
-      <div className="px-6 pt-5 pb-0 shrink-0">
-        <MetricsChart />
-      </div>
-
-      {/* Main content */}
-      <div className="flex flex-1 gap-5 px-6 pt-5 pb-6 min-h-0 overflow-hidden">
-        {/* Live Feed */}
-        <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
-          <LiveFeed />
-        </div>
-
-        {/* Alert Rail */}
-        <div className="w-72 shrink-0 overflow-hidden flex flex-col">
-          <div className="flex-1 bg-slate-800/50 rounded-lg p-4 overflow-hidden flex flex-col min-h-0">
-            <AlertRail />
+      <main
+        style={{
+          paddingTop: 44 + 14,
+          paddingLeft: 14,
+          paddingRight: 14,
+          paddingBottom: 24,
+          minWidth: 900,
+        }}
+      >
+        {loading ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: 200,
+              fontSize: 13,
+              color: "#9ca3af",
+            }}
+          >
+            Loading dashboard…
           </div>
-        </div>
-      </div>
+        ) : (
+          <>
+            <SummaryBar summary={data.summary} window={window} />
+            <PlatformBlock platform="facebook" data={data.facebook} window={window} />
+            <PlatformBlock platform="tiktok" data={data.tiktok} window={window} />
+            <PlatformBlock platform="threads" data={data.threads} window={window} />
+          </>
+        )}
+      </main>
     </div>
   );
 }

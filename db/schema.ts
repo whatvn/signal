@@ -38,6 +38,11 @@ export const classifications = sqliteTable("classifications", {
   outputTokens: integer("output_tokens").notNull().default(0),
 });
 
+export const pipelineState = sqliteTable("pipeline_state", {
+  keyword: text("keyword").primaryKey(),
+  lastCompletedAt: integer("last_completed_at").notNull(),
+});
+
 export const alerts = sqliteTable("alerts", {
   id: text("id").primaryKey(),
   ruleName: text("rule_name").notNull(),

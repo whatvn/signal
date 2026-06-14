@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type StageStatus = "idle" | "running" | "done" | "error";
+type LogLevel = "info" | "warn" | "error";
 
 interface Stage {
   key: string;
@@ -12,6 +13,13 @@ interface Stage {
   count?: number;
 }
 
+interface LogEntry {
+  ts: number;
+  stage: string;
+  level: LogLevel;
+  message: string;
+}
+
 const INITIAL_STAGES: Stage[] = [
   { key: "fetch", label: "Fetch", icon: "⬇", status: "idle" },
   { key: "extract", label: "Extract", icon: "✂", status: "idle" },
@@ -19,14 +27,38 @@ const INITIAL_STAGES: Stage[] = [
   { key: "alert", label: "Alert", icon: "🔔", status: "idle" },
 ];
 
+const STATUS_COLORS: Record<StageStatus, { ring: string; bg: string; dot: string }> = {
+  idle:    { ring: "none",                  bg: "#f4f5f7", dot: "#d1d5db" },
+  running: { ring: "2px solid #f59e0b",     bg: "#fef3c7", dot: "#f59e0b" },
+  done:    { ring: "2px solid #1D9E75",     bg: "#E1F5EE", dot: "#1D9E75" },
+  error:   { ring: "2px solid #ef4444",     bg: "#fee2e2", dot: "#ef4444" },
+};
+
+const LOG_COLORS: Record<LogLevel, string> = {
+  info:  "#6b7280",
+  warn:  "#d97706",
+  error: "#ef4444",
+};
+
+const STAGE_LABEL: Record<string, string> = {
+  fetch: "fetch",
+  extract: "extract",
+  classify: "classify",
+  alert: "alert",
+};
+
 function StatusDot({ status }: { status: StageStatus }) {
-  const colors: Record<StageStatus, string> = {
-    idle: "bg-slate-600",
-    running: "bg-yellow-400 animate-pulse",
-    done: "bg-teal-brand",
-    error: "bg-coral",
-  };
-  return <span className={`w-2 h-2 rounded-full ${colors[status]}`} />;
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        width: 6,
+        height: 6,
+        borderRadius: "50%",
+        backgroundColor: STATUS_COLORS[status].dot,
+      }}
+    />
+  );
 }
 
 export function PipelinePanel() {
@@ -34,6 +66,18 @@ export function PipelinePanel() {
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<number | null>(null);
   const [keyword, setKeyword] = useState("ZaloPay");
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [pipelineLastCompleted, setPipelineLastCompleted] = useState<number | null | undefined>(undefined);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch pipeline state whenever keyword changes
+  useEffect(() => {
+    setPipelineLastCompleted(undefined);
+    fetch(`/api/pipeline/state?keyword=${encodeURIComponent(keyword)}`)
+      .then((r) => r.json())
+      .then((d) => setPipelineLastCompleted(d.lastCompletedAt ?? null))
+      .catch(() => setPipelineLastCompleted(null));
+  }, [keyword]);
 
   useEffect(() => {
     const es = new EventSource("/api/stream");
@@ -41,6 +85,7 @@ export function PipelinePanel() {
     es.onmessage = (e) => {
       try {
         const event = JSON.parse(e.data);
+
         if (event.type === "pipeline_stage") {
           setStages((prev) =>
             prev.map((s) =>
@@ -49,17 +94,34 @@ export function PipelinePanel() {
                 : s
             )
           );
-          if (event.stage === "alert" && event.status === "done") {
-            setRunning(false);
-            setLastRun(Math.floor(Date.now() / 1000));
-          }
           if (event.stage === "fetch" && event.status === "running") {
+            setLogs([]);
             setStages(INITIAL_STAGES.map((s) => ({ ...s, status: "idle" })));
           }
+          if (event.stage === "alert" && event.status === "done") {
+            setRunning(false);
+            const now = Math.floor(Date.now() / 1000);
+            setLastRun(now);
+            setPipelineLastCompleted(now);
+          }
         }
+
+        if (event.type === "pipeline_log") {
+          setLogs((prev) => [
+            ...prev,
+            { ts: event.ts ?? Date.now(), stage: event.stage, level: event.level, message: event.message },
+          ]);
+        }
+
         if (event.type === "pipeline_error") {
           setRunning(false);
-          setStages((prev) => prev.map((s) => ({ ...s, status: s.status === "running" ? "error" : s.status })));
+          setStages((prev) =>
+            prev.map((s) => ({ ...s, status: s.status === "running" ? "error" : s.status }))
+          );
+          setLogs((prev) => [
+            ...prev,
+            { ts: Date.now(), stage: "pipeline", level: "error", message: event.message },
+          ]);
         }
       } catch {
         // ignore
@@ -69,8 +131,14 @@ export function PipelinePanel() {
     return () => es.close();
   }, []);
 
+  // Auto-scroll log to bottom on new entries
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
   async function handleRun() {
     setRunning(true);
+    setLogs([]);
     setStages(INITIAL_STAGES.map((s) => ({ ...s, status: "idle" })));
     await fetch("/api/pipeline/run", {
       method: "POST",
@@ -86,66 +154,161 @@ export function PipelinePanel() {
     return `${Math.floor(diff / 3600)}h ago`;
   }
 
-  return (
-    <div className="bg-slate-800 rounded-lg p-4">
-      {lastRun && (
-        <div className="flex justify-end mb-3">
-          <span className="text-xs text-slate-500">Last run: {timeAgo(lastRun)}</span>
-        </div>
-      )}
+  function formatTime(ts: number): string {
+    return new Date(ts).toISOString().slice(11, 23); // HH:MM:SS.mmm
+  }
 
-      <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
-        {stages.map((stage, i) => (
-          <div key={stage.key} className="flex items-center gap-2 shrink-0">
-            <div className="flex flex-col items-center gap-1">
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center text-lg transition-colors ${
-                  stage.status === "running"
-                    ? "bg-yellow-400/20 ring-2 ring-yellow-400"
-                    : stage.status === "done"
-                    ? "bg-teal-brand/20"
-                    : stage.status === "error"
-                    ? "bg-coral/20"
-                    : "bg-slate-700"
-                }`}
-              >
-                {stage.icon}
+  return (
+    <div
+      style={{
+        backgroundColor: "#ffffff",
+        border: "0.5px solid #e5e7eb",
+        borderRadius: 8,
+        overflow: "hidden",
+      }}
+    >
+      {/* Stage tracker */}
+      <div style={{ padding: 16, borderBottom: "0.5px solid #e5e7eb" }}>
+        {lastRun && (
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+            <span style={{ fontSize: 11, color: "#9ca3af" }}>Last run: {timeAgo(lastRun)}</span>
+          </div>
+        )}
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 14 }}>
+          {stages.map((stage, i) => (
+            <div key={stage.key} style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 18,
+                    backgroundColor: STATUS_COLORS[stage.status].bg,
+                    outline: STATUS_COLORS[stage.status].ring,
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {stage.icon}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <StatusDot status={stage.status} />
+                  <span style={{ fontSize: 11, color: "#6b7280" }}>{stage.label}</span>
+                </div>
+                {stage.count !== undefined && stage.status === "done" && (
+                  <span style={{ fontSize: 11, color: "#9ca3af" }}>{stage.count}</span>
+                )}
               </div>
-              <div className="flex items-center gap-1">
-                <StatusDot status={stage.status} />
-                <span className="text-xs text-slate-400">{stage.label}</span>
-              </div>
-              {stage.count !== undefined && stage.status === "done" && (
-                <span className="text-xs text-slate-500">{stage.count}</span>
+              {i < stages.length - 1 && (
+                <div style={{ width: 24, height: 1, backgroundColor: "#e5e7eb", marginBottom: 16, flexShrink: 0 }} />
               )}
             </div>
-            {i < stages.length - 1 && (
-              <div className="w-6 h-px bg-slate-600 mb-4 shrink-0" />
-            )}
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            placeholder="Keyword"
+            style={{
+              flex: 1,
+              fontSize: 12,
+              backgroundColor: "#f4f5f7",
+              border: "0.5px solid #e5e7eb",
+              borderRadius: 6,
+              padding: "6px 10px",
+              color: "#1a1a1a",
+              outline: "none",
+            }}
+          />
+          <button
+            onClick={handleRun}
+            disabled={running}
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: running ? "#9ca3af" : "#ffffff",
+              backgroundColor: running ? "#f4f5f7" : "#1D9E75",
+              border: "0.5px solid " + (running ? "#e5e7eb" : "#1D9E75"),
+              borderRadius: 6,
+              padding: "6px 14px",
+              cursor: running ? "not-allowed" : "pointer",
+              transition: "opacity 0.15s",
+            }}
+          >
+            {running ? "Running…" : "Run Now"}
+          </button>
+        </div>
+        {pipelineLastCompleted !== undefined && (
+          <div style={{ marginTop: 6, fontSize: 11, color: "#9ca3af" }}>
+            {pipelineLastCompleted === null
+              ? "First run — will fetch last 7 days"
+              : `Incremental — fetching new posts since ${new Date(pipelineLastCompleted * 1000).toISOString().replace("T", " ").slice(0, 16)}`}
           </div>
-        ))}
+        )}
       </div>
 
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          className="flex-1 text-sm bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-slate-200 focus:outline-none focus:border-teal-brand"
-          placeholder="Keyword"
-        />
-        <button
-          onClick={handleRun}
-          disabled={running}
-          className={`text-sm px-4 py-1.5 rounded font-medium transition-colors ${
-            running
-              ? "bg-slate-700 text-slate-500 cursor-not-allowed"
-              : "text-slate-900 hover:opacity-90"
-          }`}
-          style={!running ? { backgroundColor: "#4ECDC4" } : {}}
-        >
-          {running ? "Running..." : "Run Now"}
-        </button>
+      {/* Log console */}
+      <div
+        style={{
+          backgroundColor: "#fafafa",
+          height: 280,
+          overflowY: "auto",
+          fontFamily: "ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace",
+          fontSize: 11,
+          lineHeight: 1.6,
+        }}
+      >
+        {logs.length === 0 ? (
+          <div
+            style={{
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#d1d5db",
+              fontSize: 12,
+            }}
+          >
+            {running ? "Waiting for output…" : "Run the pipeline to see logs"}
+          </div>
+        ) : (
+          <div style={{ padding: "8px 0" }}>
+            {logs.map((entry, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  padding: "1px 12px",
+                  backgroundColor: entry.level === "error" ? "#fff5f5" : "transparent",
+                }}
+              >
+                <span style={{ color: "#c4c9d0", flexShrink: 0 }}>{formatTime(entry.ts)}</span>
+                <span
+                  style={{
+                    color: "#a5b4c4",
+                    flexShrink: 0,
+                    width: 52,
+                    textAlign: "right",
+                  }}
+                >
+                  [{STAGE_LABEL[entry.stage] ?? entry.stage}]
+                </span>
+                <span style={{ color: LOG_COLORS[entry.level], whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                  {entry.message}
+                </span>
+              </div>
+            ))}
+            <div ref={logEndRef} />
+          </div>
+        )}
       </div>
     </div>
   );

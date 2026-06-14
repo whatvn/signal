@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { classifications, alerts, posts } from "@/db/schema";
 import { broadcast } from "@/lib/sse";
+import { Emit } from "./runner";
 import { eq, gte, and, isNull, count } from "drizzle-orm";
 import { ulid } from "ulid";
 
@@ -17,11 +18,13 @@ const ALERT_RULES: AlertRule[] = [
   { name: "crash_spike_2h", subcategory: "app_bugs", threshold: 15, windowMinutes: 120 },
 ];
 
-export async function alertStage(): Promise<void> {
+export async function alertStage(emit: Emit): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
+  emit("info", `Checking ${ALERT_RULES.length} alert rules…`);
 
   for (const rule of ALERT_RULES) {
     const windowStart = now - rule.windowMinutes * 60;
+    emit("info", `  Rule "${rule.name}": checking last ${rule.windowMinutes}min for ${rule.subcategory}…`);
 
     const [{ value: matchCount }] = await db
       .select({ value: count() })
@@ -34,7 +37,10 @@ export async function alertStage(): Promise<void> {
         )
       );
 
-    if (matchCount < rule.threshold) continue;
+    if (matchCount < rule.threshold) {
+      emit("info", `  Rule "${rule.name}": ${matchCount} < threshold ${rule.threshold} — ok`);
+      continue;
+    }
 
     const existing = await db
       .select({ id: alerts.id })
@@ -48,7 +54,10 @@ export async function alertStage(): Promise<void> {
       )
       .get();
 
-    if (existing) continue;
+    if (existing) {
+      emit("warn", `  Rule "${rule.name}": ${matchCount} matches — alert already active, skipping`);
+      continue;
+    }
 
     const sampleRows = await db
       .select({ id: posts.id })
@@ -75,8 +84,8 @@ export async function alertStage(): Promise<void> {
     };
 
     await db.insert(alerts).values(alertRow);
-
     broadcast({ type: "new_alert", alert: alertRow });
+    emit("warn", `  ALERT FIRED: "${rule.name}" — ${matchCount} matches (threshold ${rule.threshold})`);
     console.log(`[Alert] Fired: ${rule.name} (${matchCount} matches)`);
   }
 }

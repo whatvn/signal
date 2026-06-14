@@ -3,15 +3,51 @@
 @tailwind utilities;
 
 :root {
-  --coral: #FF6B6B;
+  --coral: #D85A30;
+  --coral-fill: #FAECE7;
+  --coral-text: #993C1D;
+  --coral-border: #F0997B;
+  --teal-value: #1D9E75;
+  --teal-fill: #E1F5EE;
+  --teal-text: #0F6E56;
+  --teal-border: #5DCAA5;
   --teal-brand: #4ECDC4;
+  --amber-value: #BA7517;
+  --amber-fill: #FAEEDA;
+  --amber-text: #854F0B;
+  --amber-border: #FAC775;
+  --page-bg: #F4F5F7;
+  --panel-bg: #ffffff;
+  --border-card: #e5e7eb;
+  --border-inner: #f0f0f0;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666;
+  --text-muted: #9ca3af;
 }
 
+/* Dashboard page uses light bg; pipeline page uses dark */
 body {
   background-color: #0F172A;
   color: #E2E8F0;
 }
 
+/* Live dot pulse animation */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.signal-live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #22c55e;
+  animation: live-pulse 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* Alert pulse for old dashboard (pipeline still uses dark theme) */
 @keyframes pulse-border {
   0%, 100% { border-color: #FF6B6B; }
   50% { border-color: #ff9999; }
@@ -19,4 +55,9 @@ body {
 
 .alert-pulse {
   animation: pulse-border 1.5s ease-in-out infinite;
+}
+
+/* Category card hover */
+.category-card:hover {
+  background-color: #fafafa !important;
 }

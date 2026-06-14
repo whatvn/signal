@@ -1,19 +1,36 @@
 import { PipelinePanel } from "@/components/dashboard/PipelinePanel";
-import { AppHeader } from "@/components/layout/AppHeader";
+import { TopBar } from "@/components/signal/TopBar";
 
 export default function PipelinePage() {
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col">
-      <AppHeader />
+    <div style={{ minHeight: "100vh", backgroundColor: "#F4F5F7", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+      <TopBar />
 
-      <div className="flex-1 flex items-start justify-center px-6 pt-10">
-        <div className="w-full max-w-xl">
-          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-6">
+      <main
+        style={{
+          paddingTop: 44 + 14,
+          paddingLeft: 14,
+          paddingRight: 14,
+          paddingBottom: 24,
+          minWidth: 900,
+        }}
+      >
+        <div style={{ maxWidth: 560, margin: "0 auto" }}>
+          <h2
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: "#9ca3af",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              marginBottom: 12,
+            }}
+          >
             Agent Pipeline
           </h2>
           <PipelinePanel />
         </div>
-      </div>
+      </main>
     </div>
   );
 }
