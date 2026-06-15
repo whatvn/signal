@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Signal — Social Listening",
-  description: "Real-time social media monitoring for ZaloPay",
+  description: "Real-time social media monitoring — Signal",
 };
 
 export default function RootLayout({

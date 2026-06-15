@@ -1,21 +1,19 @@
 import gplay from "google-play-scraper";
 import { RawPost } from "./types";
 
-const APPLE_APP_ID = "1112407590";
-const APPLE_COUNTRY = "vn";
-const APPLE_SOURCE_URL = `https://apps.apple.com/vn/app/id${APPLE_APP_ID}`;
-
-const GPLAY_APP_ID = "vn.com.vng.zalopay";
-const GPLAY_SOURCE_URL = `https://play.google.com/store/apps/details?id=${GPLAY_APP_ID}`;
-
 // iTunes RSS feed: public, no auth, up to 10 pages × 50 reviews
-export async function fetchAppleReviews(cutoff: number): Promise<RawPost[]> {
+export async function fetchAppleReviews(
+  cutoff: number,
+  appId: string,
+  country: string
+): Promise<RawPost[]> {
+  const sourceUrl = `https://apps.apple.com/${country}/app/id${appId}`;
   try {
     const allPosts: RawPost[] = [];
     const maxPages = 10;
 
     for (let page = 1; page <= maxPages; page++) {
-      const url = `https://itunes.apple.com/${APPLE_COUNTRY}/rss/customerreviews/page=${page}/id=${APPLE_APP_ID}/sortby=mostrecent/json`;
+      const url = `https://itunes.apple.com/${country}/rss/customerreviews/page=${page}/id=${appId}/sortby=mostrecent/json`;
       const res = await fetch(url);
 
       if (!res.ok) {
@@ -49,7 +47,7 @@ export async function fetchAppleReviews(cutoff: number): Promise<RawPost[]> {
           platform: "appstore",
           authorHandle: r.author?.name?.label ?? "",
           contentText: text,
-          sourceUrl: r.link?.attributes?.href ?? APPLE_SOURCE_URL,
+          sourceUrl: r.link?.attributes?.href ?? sourceUrl,
           rawJson: JSON.stringify(r),
           publishedAt,
         };
@@ -70,7 +68,11 @@ export async function fetchAppleReviews(cutoff: number): Promise<RawPost[]> {
   }
 }
 
-export async function fetchPlayStoreReviews(cutoff: number): Promise<RawPost[]> {
+export async function fetchPlayStoreReviews(
+  cutoff: number,
+  appId: string
+): Promise<RawPost[]> {
+  const sourceUrl = `https://play.google.com/store/apps/details?id=${appId}`;
   try {
     const allPosts: RawPost[] = [];
     let nextToken: string | undefined;
@@ -78,7 +80,7 @@ export async function fetchPlayStoreReviews(cutoff: number): Promise<RawPost[]> 
 
     for (let page = 0; page < maxPages; page++) {
       const result = await gplay.reviews({
-        appId: GPLAY_APP_ID,
+        appId,
         sort: 2, // sort.NEWEST
         num: 100,
         lang: "vi",
@@ -100,7 +102,7 @@ export async function fetchPlayStoreReviews(cutoff: number): Promise<RawPost[]> 
           platform: "playstore",
           authorHandle: r.userName ?? "",
           contentText: text ?? "",
-          sourceUrl: r.url ?? GPLAY_SOURCE_URL,
+          sourceUrl: r.url ?? sourceUrl,
           rawJson: JSON.stringify(r),
           publishedAt,
         };

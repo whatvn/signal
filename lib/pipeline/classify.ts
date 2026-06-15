@@ -14,14 +14,15 @@ const client = new OpenAI({
 });
 const MODEL = process.env.LLM_MODEL ?? "gpt-4o-mini";
 
-const SYSTEM_PROMPT = `You are a social media analyst for ZaloPay, a Vietnamese digital payment application widely used in Vietnam.
+function buildSystemPrompt(appName: string): string {
+  return `You are a social media analyst for ${appName}, a Vietnamese digital payment application widely used in Vietnam.
 Classify each social media post + comments bundle according to the taxonomy below.
 Posts may be in Vietnamese, English, or both. Use the combined context of caption and comments to classify.
 Return a JSON object with a single key "results" containing an array in exactly the same order as the input array.
 
 TAXONOMY:
 Negative sentiments:
-- fraud_scam: fake ZaloPay accounts, phishing links, impersonation, scam warnings
+- fraud_scam: fake ${appName} accounts, phishing links, impersonation, scam warnings
 - fund_loss: unexplained balance deductions, money disappeared, unauthorized charges
 - app_bugs: crashes, freezes, errors, app not working
 - transaction_failure: payment failed, transfer stuck, QR not working
@@ -36,6 +37,7 @@ Positive sentiments:
 
 OUTPUT FORMAT (strict JSON object, results array in same order as input):
 {"results":[{"post_id":"...","sentiment":"positive|negative","subcategory":"...","confidence":0.0}]}`;
+}
 
 interface ClassifyInput {
   post_id: string;
@@ -51,7 +53,8 @@ interface ClassifyOutput {
 }
 
 async function classifyBatch(
-  batch: ClassifyInput[]
+  batch: ClassifyInput[],
+  systemPrompt: string
 ): Promise<ClassifyOutput[]> {
   const userMessage = `Classify these ${batch.length} posts:\n${JSON.stringify(batch, null, 2)}`;
 
@@ -63,7 +66,7 @@ async function classifyBatch(
         max_tokens: 20000,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
         ],
       });
@@ -89,7 +92,8 @@ async function classifyBatch(
   return [];
 }
 
-export async function classifyStage(items: PostWithComments[], emit: Emit): Promise<void> {
+export async function classifyStage(items: PostWithComments[], emit: Emit, profileName = "ZaloPay"): Promise<void> {
+  const systemPrompt = buildSystemPrompt(profileName);
   if (items.length === 0) return;
 
   const BATCH_SIZE = 20;
@@ -108,7 +112,7 @@ export async function classifyStage(items: PostWithComments[], emit: Emit): Prom
       comments: comments.slice(0, 30).map((c) => c.contentText),
     }));
 
-    const results = await classifyBatch(inputs);
+    const results = await classifyBatch(inputs, systemPrompt);
     emit("info", `Batch ${batchNum}/${totalBatches}: received ${results.length} results`);
 
     for (const result of results) {

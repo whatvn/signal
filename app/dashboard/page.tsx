@@ -52,31 +52,50 @@ const EMPTY_DATA: DashboardData = {
 
 export default function DashboardPage() {
   const [window, setWindow] = useState("7d");
+  const [profileId, setProfileId] = useState<number | undefined>(undefined);
   const [data, setData] = useState<DashboardData>(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
 
+  // Fetch default profile id on mount
+  useEffect(() => {
+    fetch("/api/profiles")
+      .then((r) => r.json())
+      .then((list: { id: number; isDefault: boolean }[]) => {
+        const def = list.find((p) => p.isDefault) ?? list[0];
+        if (def) setProfileId(def.id);
+      })
+      .catch(() => {});
+  }, []);
+
   const load = useCallback(() => {
-    fetch(`/api/dashboard?window=${window}`)
+    if (profileId === undefined) return;
+    fetch(`/api/dashboard?window=${window}&profileId=${profileId}`)
       .then((r) => r.json())
       .then((d) => {
         setData(d);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [window]);
+  }, [window, profileId]);
 
   useEffect(() => {
+    if (profileId === undefined) return;
     setLoading(true);
     load();
-  }, [load]);
-
-  function handleWindowChange(w: string) {
-    setWindow(w);
-  }
+  }, [load, profileId]);
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#F4F5F7", fontFamily: "system-ui, -apple-system, sans-serif" }}>
-      <TopBar window={window} onWindowChange={handleWindowChange} onScanComplete={load} />
+      <TopBar
+        window={window}
+        onWindowChange={setWindow}
+        onScanComplete={load}
+        profileId={profileId}
+        onProfileChange={(id) => {
+          setProfileId(id);
+          setLoading(true);
+        }}
+      />
 
       <main
         style={{
@@ -103,11 +122,11 @@ export default function DashboardPage() {
         ) : (
           <>
             <SummaryBar summary={data.summary} window={window} />
-            <PlatformBlock platform="appstore" data={data.appstore} window={window} onFetch={load} />
-            <PlatformBlock platform="playstore" data={data.playstore} window={window} onFetch={load} />
-            <PlatformBlock platform="tiktok" data={data.tiktok} window={window} onFetch={load} />
-            <PlatformBlock platform="facebook" data={data.facebook} window={window} onFetch={load} />
-            <PlatformBlock platform="threads" data={data.threads} window={window} onFetch={load} />
+            <PlatformBlock platform="appstore" data={data.appstore} window={window} onFetch={load} profileId={profileId} />
+            <PlatformBlock platform="playstore" data={data.playstore} window={window} onFetch={load} profileId={profileId} />
+            <PlatformBlock platform="tiktok" data={data.tiktok} window={window} onFetch={load} profileId={profileId} />
+            <PlatformBlock platform="facebook" data={data.facebook} window={window} onFetch={load} profileId={profileId} />
+            <PlatformBlock platform="threads" data={data.threads} window={window} onFetch={load} profileId={profileId} />
           </>
         )}
       </main>

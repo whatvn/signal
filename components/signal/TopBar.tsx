@@ -6,19 +6,38 @@ import { usePathname } from "next/navigation";
 import {
   IconRadar,
   IconLoader2,
+  IconSettings,
+  IconLayoutDashboard,
+  IconActivityHeartbeat,
 } from "@tabler/icons-react";
+
+interface Profile {
+  id: number;
+  name: string;
+  isDefault: boolean;
+}
 
 interface Props {
   window?: string;
   onWindowChange?: (w: string) => void;
   onScanComplete?: () => void;
+  profileId?: number;
+  onProfileChange?: (id: number) => void;
 }
 
-export function TopBar({ window, onWindowChange, onScanComplete }: Props) {
+export function TopBar({ window, onWindowChange, onScanComplete, profileId, onProfileChange }: Props) {
   const [scanning, setScanning] = useState(false);
   const [lastScanAgo, setLastScanAgo] = useState<string>("—");
+  const [profileList, setProfileList] = useState<Profile[]>([]);
   const pathname = usePathname();
   const isPipeline = pathname === "/pipeline";
+
+  useEffect(() => {
+    fetch("/api/profiles")
+      .then((r) => r.json())
+      .then((data: Profile[]) => setProfileList(data))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const es = new EventSource("/api/stream");
@@ -45,9 +64,11 @@ export function TopBar({ window, onWindowChange, onScanComplete }: Props) {
     await fetch("/api/pipeline/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keyword: "ZaloPay" }),
+      body: JSON.stringify({ profileId }),
     });
   }
+
+  const selectedProfile = profileList.find((p) => p.id === profileId) ?? profileList.find((p) => p.isDefault) ?? profileList[0];
 
   return (
     <header
@@ -73,21 +94,45 @@ export function TopBar({ window, onWindowChange, onScanComplete }: Props) {
       {/* Divider */}
       <div style={{ width: "0.5px", height: 20, backgroundColor: "#e5e7eb" }} />
 
-      {/* Keyword */}
-      <span style={{ fontSize: 11, color: "#999", letterSpacing: "0.03em" }}>Keyword</span>
-      <span
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          color: "#0F6E56",
-          backgroundColor: "#E1F5EE",
-          border: "0.5px solid #5DCAA5",
-          borderRadius: 20,
-          padding: "2px 10px",
-        }}
-      >
-        ZaloPay
-      </span>
+      {/* Profile selector */}
+      <span style={{ fontSize: 11, color: "#999", letterSpacing: "0.03em" }}>Profile</span>
+      {profileList.length > 1 ? (
+        <select
+          value={profileId ?? selectedProfile?.id ?? ""}
+          onChange={(e) => onProfileChange?.(parseInt(e.target.value, 10))}
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: "#0F6E56",
+            backgroundColor: "#E1F5EE",
+            border: "0.5px solid #5DCAA5",
+            borderRadius: 20,
+            padding: "2px 10px",
+            cursor: "pointer",
+            outline: "none",
+          }}
+        >
+          {profileList.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: "#0F6E56",
+            backgroundColor: "#E1F5EE",
+            border: "0.5px solid #5DCAA5",
+            borderRadius: 20,
+            padding: "2px 10px",
+          }}
+        >
+          {selectedProfile?.name ?? "—"}
+        </span>
+      )}
 
       {/* Divider */}
       <div style={{ width: "0.5px", height: 20, backgroundColor: "#e5e7eb" }} />
@@ -113,16 +158,26 @@ export function TopBar({ window, onWindowChange, onScanComplete }: Props) {
       <Link
         href="/"
         style={{ fontSize: 11, color: isPipeline ? "#666" : "#1D9E75", fontWeight: isPipeline ? 400 : 600 }}
-        className="hover:text-gray-900 transition-colors"
+        className="hover:text-gray-900 transition-colors flex items-center gap-1"
       >
+        <IconLayoutDashboard size={12} />
         Dashboard
       </Link>
       <Link
         href="/pipeline"
         style={{ fontSize: 11, color: isPipeline ? "#1D9E75" : "#666", fontWeight: isPipeline ? 600 : 400 }}
-        className="hover:text-gray-900 transition-colors"
+        className="hover:text-gray-900 transition-colors flex items-center gap-1"
       >
+        <IconActivityHeartbeat size={12} />
         Pipeline
+      </Link>
+      <Link
+        href="/settings"
+        style={{ fontSize: 11, color: pathname === "/settings" ? "#1D9E75" : "#666", fontWeight: pathname === "/settings" ? 600 : 400 }}
+        className="hover:text-gray-900 transition-colors flex items-center gap-1"
+      >
+        <IconSettings size={12} />
+        Settings
       </Link>
 
       {/* Right side */}

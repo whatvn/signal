@@ -1,12 +1,13 @@
 import { broadcast } from "@/lib/sse";
 import { db } from "@/db";
 import { posts, classifications, pipelineState } from "@/db/schema";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import { fetchStage } from "./fetch";
 import { extractStage } from "./extract";
 import { classifyStage } from "./classify";
 import { alertStage } from "./alert";
 import { RawPost } from "@/lib/socialfetch/types";
+import { ProfileConfig } from "@/lib/types";
 
 type StageStatus = "idle" | "running" | "done" | "error";
 export type LogLevel = "info" | "warn" | "error";
@@ -22,18 +23,22 @@ function makeEmit(stage: string): Emit {
   };
 }
 
-export async function runPipeline(keyword = "ZaloPay", platform?: string): Promise<void> {
-  console.log(`[Pipeline] Starting run for keyword: ${keyword}${platform ? ` platform: ${platform}` : ""}`);
+export async function runPipeline(profile: ProfileConfig, platform?: string): Promise<void> {
+  console.log(`[Pipeline] Starting run for profile: ${profile.name}${platform ? ` platform: ${platform}` : ""}`);
 
   try {
     const fetchEmit = makeEmit("fetch");
     emitStage("fetch", "running");
-    const newPosts = await fetchStage(keyword, fetchEmit, platform);
+    const newPosts = await fetchStage(profile, fetchEmit, platform);
 
-    // Also recover any posts that were inserted in a previous interrupted run but never classified
+    // Recover posts inserted in a previous interrupted run but never classified
     const unclassifiedRows = await (platform
-      ? db.select().from(posts).where(sql`${posts.id} NOT IN (SELECT post_id FROM classifications) AND ${posts.platform} = ${platform}`)
-      : db.select().from(posts).where(sql`${posts.id} NOT IN (SELECT post_id FROM classifications)`)
+      ? db.select().from(posts).where(
+          sql`${posts.id} NOT IN (SELECT post_id FROM classifications) AND ${posts.platform} = ${platform} AND ${posts.profileId} = ${profile.id}`
+        )
+      : db.select().from(posts).where(
+          sql`${posts.id} NOT IN (SELECT post_id FROM classifications) AND ${posts.profileId} = ${profile.id}`
+        )
     );
 
     const unclassified: RawPost[] = unclassifiedRows
@@ -70,7 +75,7 @@ export async function runPipeline(keyword = "ZaloPay", platform?: string): Promi
 
     const classifyEmit = makeEmit("classify");
     emitStage("classify", "running");
-    await classifyStage(postsWithComments, classifyEmit);
+    await classifyStage(postsWithComments, classifyEmit, profile.name);
     emitStage("classify", "done", { count: postsWithComments.length });
 
     const alertEmit = makeEmit("alert");
@@ -79,7 +84,7 @@ export async function runPipeline(keyword = "ZaloPay", platform?: string): Promi
     emitStage("alert", "done");
 
     const now = Math.floor(Date.now() / 1000);
-    const stateKey = platform ? `${keyword}::${platform}` : keyword;
+    const stateKey = platform ? `p${profile.id}::${platform}` : `p${profile.id}`;
     await db
       .insert(pipelineState)
       .values({ keyword: stateKey, lastCompletedAt: now })

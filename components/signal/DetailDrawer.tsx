@@ -33,6 +33,7 @@ interface Props {
   sentiment: "negative" | "positive";
   window: string;
   onClose: () => void;
+  profileId?: number;
 }
 
 const SUBCATEGORY_LABELS: Record<string, string> = {
@@ -62,7 +63,7 @@ function PlatformIcon({ platform }: { platform: string }) {
   return <IconBrandFacebook size={13} style={{ color: "#9ca3af" }} />;
 }
 
-export function DetailDrawer({ open, category, categoryLabel, platform, count, sentiment, window, onClose }: Props) {
+export function DetailDrawer({ open, category, categoryLabel, platform, count, sentiment, window, onClose, profileId }: Props) {
   const [posts, setPosts] = useState<DrawerPost[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -75,7 +76,8 @@ export function DetailDrawer({ open, category, categoryLabel, platform, count, s
     if (!open || !category) return;
     setLoading(true);
     setPosts([]);
-    fetch(`/api/posts?platform=${platform}&subcategory=${category}&window=${window}&limit=50`)
+    const pid = profileId !== undefined ? `&profileId=${profileId}` : "";
+    fetch(`/api/posts?platform=${platform}&subcategory=${category}&window=${window}&limit=50${pid}`)
       .then((r) => r.json())
       .then((d) => {
         setPosts(d.posts ?? []);

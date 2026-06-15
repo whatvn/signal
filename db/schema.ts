@@ -1,5 +1,20 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 
+export const profiles = sqliteTable("profiles", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),
+  isDefault: integer("is_default").notNull().default(0),
+  tiktokKeywords: text("tiktok_keywords").notNull().default("[]"),
+  tiktokHashtags: text("tiktok_hashtags").notNull().default("[]"),
+  threadsKeywords: text("threads_keywords").notNull().default("[]"),
+  facebookPageUrls: text("facebook_page_urls").notNull().default("[]"),
+  appStoreId: text("app_store_id"),
+  appStoreCountry: text("app_store_country").notNull().default("vn"),
+  playStoreId: text("play_store_id"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const posts = sqliteTable("posts", {
   id: text("id").primaryKey(),
   platform: text("platform").notNull(),
@@ -10,6 +25,7 @@ export const posts = sqliteTable("posts", {
   fetchedAt: integer("fetched_at").notNull(),
   publishedAt: integer("published_at"),
   keyword: text("keyword").notNull(),
+  profileId: integer("profile_id").references(() => profiles.id),
 });
 
 export const comments = sqliteTable("comments", {

@@ -61,23 +61,42 @@ function StatusDot({ status }: { status: StageStatus }) {
   );
 }
 
+interface Profile {
+  id: number;
+  name: string;
+  isDefault: boolean;
+}
+
 export function PipelinePanel() {
   const [stages, setStages] = useState<Stage[]>(INITIAL_STAGES);
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<number | null>(null);
-  const [keyword, setKeyword] = useState("ZaloPay");
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profileId, setProfileId] = useState<number | undefined>(undefined);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [pipelineLastCompleted, setPipelineLastCompleted] = useState<number | null | undefined>(undefined);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  // Fetch pipeline state whenever keyword changes
   useEffect(() => {
+    fetch("/api/profiles")
+      .then((r) => r.json())
+      .then((data: Profile[]) => {
+        setProfiles(data);
+        const def = data.find((p) => p.isDefault) ?? data[0];
+        if (def && profileId === undefined) setProfileId(def.id);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fetch pipeline state whenever profileId changes
+  useEffect(() => {
+    if (profileId === undefined) return;
     setPipelineLastCompleted(undefined);
-    fetch(`/api/pipeline/state?keyword=${encodeURIComponent(keyword)}`)
+    fetch(`/api/pipeline/state?profileId=${profileId}`)
       .then((r) => r.json())
       .then((d) => setPipelineLastCompleted(d.lastCompletedAt ?? null))
       .catch(() => setPipelineLastCompleted(null));
-  }, [keyword]);
+  }, [profileId]);
 
   useEffect(() => {
     const es = new EventSource("/api/stream");
@@ -143,7 +162,7 @@ export function PipelinePanel() {
     await fetch("/api/pipeline/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keyword }),
+      body: JSON.stringify({ profileId }),
     });
   }
 
@@ -211,11 +230,9 @@ export function PipelinePanel() {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <input
-            type="text"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            placeholder="Keyword"
+          <select
+            value={profileId ?? ""}
+            onChange={(e) => setProfileId(parseInt(e.target.value, 10))}
             style={{
               flex: 1,
               fontSize: 12,
@@ -225,8 +242,13 @@ export function PipelinePanel() {
               padding: "6px 10px",
               color: "#1a1a1a",
               outline: "none",
+              cursor: "pointer",
             }}
-          />
+          >
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}{p.isDefault ? " (default)" : ""}</option>
+            ))}
+          </select>
           <button
             onClick={handleRun}
             disabled={running}

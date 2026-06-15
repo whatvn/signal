@@ -131,6 +131,7 @@ interface Props {
   data: PlatformData;
   window: string;
   onFetch?: () => void;
+  profileId?: number;
 }
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -141,7 +142,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   playstore: "Play Store",
 };
 
-export function PlatformBlock({ platform, data, window, onFetch }: Props) {
+export function PlatformBlock({ platform, data, window, onFetch, profileId }: Props) {
   const isFb = platform === "facebook";
   const isTh = platform === "threads";
   const isAs = platform === "appstore";
@@ -163,7 +164,7 @@ export function PlatformBlock({ platform, data, window, onFetch }: Props) {
     await fetch("/api/pipeline/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keyword: "ZaloPay", platform }),
+      body: JSON.stringify({ profileId, platform }),
     });
 
     esRef.current?.close();
@@ -562,6 +563,7 @@ export function PlatformBlock({ platform, data, window, onFetch }: Props) {
           sentiment={selectedSentiment}
           window={window}
           onClose={() => setDrawerOpen(false)}
+          profileId={profileId}
         />
       )}
     </div>

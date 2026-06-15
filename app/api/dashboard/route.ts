@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { posts, classifications, alerts } from "@/db/schema";
+import { posts, classifications, alerts, profiles } from "@/db/schema";
 import { eq, gte, and, desc, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -43,8 +43,18 @@ function timeAgo(ts: number): string {
 
 export async function GET(req: NextRequest) {
   const window = req.nextUrl.searchParams.get("window") ?? "24h";
+  const profileIdParam = req.nextUrl.searchParams.get("profileId");
   const since = Math.floor(Date.now() / 1000) - windowSeconds(window);
   const prevSince = since - windowSeconds(window);
+
+  // Resolve profile — use param if provided, else fall back to default
+  let profileId: number;
+  if (profileIdParam) {
+    profileId = parseInt(profileIdParam, 10);
+  } else {
+    const [def] = await db.select({ id: profiles.id }).from(profiles).where(eq(profiles.isDefault, 1)).limit(1);
+    profileId = def?.id ?? 1;
+  }
 
   const rows = await db
     .select({
@@ -61,16 +71,19 @@ export async function GET(req: NextRequest) {
     })
     .from(posts)
     .innerJoin(classifications, eq(classifications.postId, posts.id))
-    .where(gte(posts.publishedAt, since))
+    .where(and(eq(posts.profileId, profileId), gte(posts.publishedAt, since)))
     .orderBy(desc(posts.publishedAt));
 
-  // Prev period for delta
   const prevRows = await db
     .select({ sentiment: classifications.sentiment })
     .from(classifications)
     .innerJoin(posts, eq(posts.id, classifications.postId))
     .where(
-      and(gte(posts.publishedAt, prevSince), sql`${posts.publishedAt} < ${since}`)
+      and(
+        eq(posts.profileId, profileId),
+        gte(posts.publishedAt, prevSince),
+        sql`${posts.publishedAt} < ${since}`
+      )
     );
 
   const activeAlerts = await db
@@ -86,7 +99,16 @@ export async function GET(req: NextRequest) {
 
     const categories = ALL_SUBCATEGORIES.map((sub) => {
       const catRows = pr.filter((r) => r.subcategory === sub);
-      const fallbackHandle = platform === "facebook" ? "Facebook user" : platform === "threads" ? "@threads" : platform === "appstore" ? "App Store user" : platform === "playstore" ? "Play Store user" : "@tiktok";
+      const fallbackHandle =
+        platform === "facebook"
+          ? "Facebook user"
+          : platform === "threads"
+          ? "@threads"
+          : platform === "appstore"
+          ? "App Store user"
+          : platform === "playstore"
+          ? "Play Store user"
+          : "@tiktok";
       const previews = catRows.slice(0, 2).map((r) => ({
         source_name: r.authorHandle ?? fallbackHandle,
         timestamp_relative: timeAgo(r.publishedAt ?? r.fetchedAt),
@@ -105,7 +127,6 @@ export async function GET(req: NextRequest) {
         url: r.sourceUrl ?? null,
       }));
 
-    // Sparkline: hourly buckets for 24h, daily buckets for 7d/30d
     const bucketMap = new Map<number, { negative: number; positive: number }>();
     const nowSec = Math.floor(Date.now() / 1000);
     if (win === "24h") {

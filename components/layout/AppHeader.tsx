@@ -21,8 +21,8 @@ export function AppHeader() {
           Z
         </div>
         <div>
-          <h1 className="text-sm font-semibold text-slate-100">ZaloPay Social Listening</h1>
-          <p className="text-xs text-slate-500">Real-time monitoring · Facebook + TikTok</p>
+          <h1 className="text-sm font-semibold text-slate-100">Signal — Social Listening</h1>
+          <p className="text-xs text-slate-500">Real-time monitoring · Multi-platform</p>
         </div>
       </div>
 

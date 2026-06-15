@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { posts, classifications } from "@/db/schema";
+import { posts, classifications, profiles } from "@/db/schema";
 import { eq, desc, and, gte, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -19,14 +19,24 @@ export async function GET(req: NextRequest) {
   const subcategory = searchParams.get("subcategory");
   const platform = searchParams.get("platform");
   const window = searchParams.get("window") ?? "24h";
+  const profileIdParam = searchParams.get("profileId");
   const since = Math.floor(Date.now() / 1000) - windowSeconds(window);
 
   const offset = (page - 1) * limit;
+
+  let profileId: number | null = null;
+  if (profileIdParam) {
+    profileId = parseInt(profileIdParam, 10);
+  } else {
+    const [def] = await db.select({ id: profiles.id }).from(profiles).where(eq(profiles.isDefault, 1)).limit(1);
+    profileId = def?.id ?? null;
+  }
 
   const conditions = [];
   if (sentiment) conditions.push(eq(classifications.sentiment, sentiment));
   if (subcategory) conditions.push(eq(classifications.subcategory, subcategory));
   if (platform) conditions.push(eq(posts.platform, platform));
+  if (profileId !== null) conditions.push(eq(posts.profileId, profileId));
   conditions.push(gte(classifications.classifiedAt, since));
 
   const rows = await db
