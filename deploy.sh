@@ -13,7 +13,6 @@ MAX_REPLICAS=1
 CPU_SCALE=50
 MEM_SCALE=50
 SKILLS_DIR=".claude/skills/agentbase/scripts"
-LIVE_ENDPOINT="https://endpoint-21d18a0d-36a9-4a16-af4f-ba3f28fdf7fc.agentbase-runtime.aiplatform.vngcloud.vn"
 
 # ─── Flags ────────────────────────────────────────────────────────────────────
 FRESH_DB=false
