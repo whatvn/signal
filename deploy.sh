@@ -15,6 +15,14 @@ MEM_SCALE=50
 SKILLS_DIR=".claude/skills/agentbase/scripts"
 LIVE_ENDPOINT="https://endpoint-21d18a0d-36a9-4a16-af4f-ba3f28fdf7fc.agentbase-runtime.aiplatform.vngcloud.vn"
 
+# ─── Flags ────────────────────────────────────────────────────────────────────
+FRESH_DB=false
+for arg in "$@"; do
+  case "$arg" in
+    --fresh) FRESH_DB=true ;;
+  esac
+done
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 log()  { echo "▶ $*"; }
 ok()   { echo "✓ $*"; }
@@ -31,23 +39,28 @@ bash "$SKILLS_DIR/cr.sh" credentials docker-login
 ok "Docker login OK"
 
 # ─── Step 3: Backup live database ────────────────────────────────────────────
-log "Triggering database backup on live endpoint..."
-BACKUP_RESP=$(curl -sf -X POST "$LIVE_ENDPOINT/api/backup" \
-  -H "Content-Type: application/json" \
-  --max-time 60 || echo "")
-
-if echo "$BACKUP_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('ok') else 1)" 2>/dev/null; then
-  ok "Backup created: $(echo "$BACKUP_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['backup'])")"
-
-  log "Downloading backup as seed.db..."
-  curl -sf "$LIVE_ENDPOINT/api/backup" \
-    -H "Accept: application/octet-stream" \
-    --max-time 120 \
-    -o seed.db
-  ok "seed.db ready ($(du -sh seed.db | cut -f1))"
-else
-  log "Live endpoint not reachable or backup failed — using empty seed (fresh init on first boot)"
+if [ "$FRESH_DB" = true ]; then
+  log "Skipping backup — deploying with fresh database (--fresh)"
   : > seed.db
+else
+  log "Triggering database backup on live endpoint..."
+  BACKUP_RESP=$(curl -sf -X POST "$LIVE_ENDPOINT/api/backup" \
+    -H "Content-Type: application/json" \
+    --max-time 60 || echo "")
+
+  if echo "$BACKUP_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('ok') else 1)" 2>/dev/null; then
+    ok "Backup created: $(echo "$BACKUP_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['backup'])")"
+
+    log "Downloading backup as seed.db..."
+    curl -sf "$LIVE_ENDPOINT/api/backup" \
+      -H "Accept: application/octet-stream" \
+      --max-time 120 \
+      -o seed.db
+    ok "seed.db ready ($(du -sh seed.db | cut -f1))"
+  else
+    log "Live endpoint not reachable or backup failed — using empty seed (fresh init on first boot)"
+    : > seed.db
+  fi
 fi
 
 # ─── Step 4: Generate image tag ──────────────────────────────────────────────

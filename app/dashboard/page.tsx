@@ -18,6 +18,8 @@ interface DashboardData {
   facebook: PlatformData;
   tiktok: PlatformData;
   threads: PlatformData;
+  appstore: PlatformData;
+  playstore: PlatformData;
 }
 
 const EMPTY_PLATFORM: PlatformData = {
@@ -44,10 +46,12 @@ const EMPTY_DATA: DashboardData = {
   facebook: EMPTY_PLATFORM,
   tiktok: EMPTY_PLATFORM,
   threads: EMPTY_PLATFORM,
+  appstore: EMPTY_PLATFORM,
+  playstore: EMPTY_PLATFORM,
 };
 
 export default function DashboardPage() {
-  const [window, setWindow] = useState("24h");
+  const [window, setWindow] = useState("7d");
   const [data, setData] = useState<DashboardData>(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
 
@@ -99,9 +103,11 @@ export default function DashboardPage() {
         ) : (
           <>
             <SummaryBar summary={data.summary} window={window} />
-            <PlatformBlock platform="facebook" data={data.facebook} window={window} />
-            <PlatformBlock platform="tiktok" data={data.tiktok} window={window} />
-            <PlatformBlock platform="threads" data={data.threads} window={window} />
+            <PlatformBlock platform="appstore" data={data.appstore} window={window} onFetch={load} />
+            <PlatformBlock platform="playstore" data={data.playstore} window={window} onFetch={load} />
+            <PlatformBlock platform="tiktok" data={data.tiktok} window={window} onFetch={load} />
+            <PlatformBlock platform="facebook" data={data.facebook} window={window} onFetch={load} />
+            <PlatformBlock platform="threads" data={data.threads} window={window} onFetch={load} />
           </>
         )}
       </main>

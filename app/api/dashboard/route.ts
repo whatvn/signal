@@ -53,16 +53,16 @@ export async function GET(req: NextRequest) {
       authorHandle: posts.authorHandle,
       contentText: posts.contentText,
       fetchedAt: posts.fetchedAt,
+      publishedAt: posts.publishedAt,
       sentiment: classifications.sentiment,
       subcategory: classifications.subcategory,
       commentCount: classifications.commentCount,
-      classifiedAt: classifications.classifiedAt,
       sourceUrl: posts.sourceUrl,
     })
     .from(posts)
     .innerJoin(classifications, eq(classifications.postId, posts.id))
-    .where(gte(classifications.classifiedAt, since))
-    .orderBy(desc(classifications.classifiedAt));
+    .where(gte(posts.publishedAt, since))
+    .orderBy(desc(posts.publishedAt));
 
   // Prev period for delta
   const prevRows = await db
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
     .from(classifications)
     .innerJoin(posts, eq(posts.id, classifications.postId))
     .where(
-      and(gte(classifications.classifiedAt, prevSince), sql`${classifications.classifiedAt} < ${since}`)
+      and(gte(posts.publishedAt, prevSince), sql`${posts.publishedAt} < ${since}`)
     );
 
   const activeAlerts = await db
@@ -79,17 +79,17 @@ export async function GET(req: NextRequest) {
     .where(sql`${alerts.acknowledgedAt} IS NULL`)
     .orderBy(desc(alerts.firedAt));
 
-  function buildPlatformData(platform: string) {
+  function buildPlatformData(platform: string, win = window) {
     const pr = rows.filter((r) => r.platform === platform);
     const negRows = pr.filter((r) => r.sentiment === "negative");
     const posRows = pr.filter((r) => r.sentiment === "positive");
 
     const categories = ALL_SUBCATEGORIES.map((sub) => {
       const catRows = pr.filter((r) => r.subcategory === sub);
-      const fallbackHandle = platform === "facebook" ? "Facebook user" : platform === "threads" ? "@threads" : "@tiktok";
+      const fallbackHandle = platform === "facebook" ? "Facebook user" : platform === "threads" ? "@threads" : platform === "appstore" ? "App Store user" : platform === "playstore" ? "Play Store user" : "@tiktok";
       const previews = catRows.slice(0, 2).map((r) => ({
         source_name: r.authorHandle ?? fallbackHandle,
-        timestamp_relative: timeAgo(r.classifiedAt),
+        timestamp_relative: timeAgo(r.publishedAt ?? r.fetchedAt),
         text_preview: r.contentText.slice(0, 100),
       }));
       return { subcategory: sub, count: catRows.length, previews };
@@ -105,18 +105,30 @@ export async function GET(req: NextRequest) {
         url: r.sourceUrl ?? null,
       }));
 
-    // Hourly sparkline — pre-fill all 24 buckets so gaps show as zeros
-    const nowHour = Math.floor(Date.now() / 1000 / 3600) * 3600;
+    // Sparkline: hourly buckets for 24h, daily buckets for 7d/30d
     const bucketMap = new Map<number, { negative: number; positive: number }>();
-    for (let i = 23; i >= 0; i--) {
-      bucketMap.set(nowHour - i * 3600, { negative: 0, positive: 0 });
-    }
-    for (const r of pr) {
-      const hourTs = Math.floor(r.classifiedAt / 3600) * 3600;
-      if (!bucketMap.has(hourTs)) continue; // outside the 24h window
-      const b = bucketMap.get(hourTs)!;
-      if (r.sentiment === "negative") b.negative++;
-      else if (r.sentiment === "positive") b.positive++;
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (win === "24h") {
+      const nowHour = Math.floor(nowSec / 3600) * 3600;
+      for (let i = 23; i >= 0; i--) bucketMap.set(nowHour - i * 3600, { negative: 0, positive: 0 });
+      for (const r of pr) {
+        const hourTs = Math.floor((r.publishedAt ?? r.fetchedAt) / 3600) * 3600;
+        if (!bucketMap.has(hourTs)) continue;
+        const b = bucketMap.get(hourTs)!;
+        if (r.sentiment === "negative") b.negative++;
+        else if (r.sentiment === "positive") b.positive++;
+      }
+    } else {
+      const days = win === "30d" ? 30 : 7;
+      const nowDay = Math.floor(nowSec / 86400) * 86400;
+      for (let i = days - 1; i >= 0; i--) bucketMap.set(nowDay - i * 86400, { negative: 0, positive: 0 });
+      for (const r of pr) {
+        const dayTs = Math.floor((r.publishedAt ?? r.fetchedAt) / 86400) * 86400;
+        if (!bucketMap.has(dayTs)) continue;
+        const b = bucketMap.get(dayTs)!;
+        if (r.sentiment === "negative") b.negative++;
+        else if (r.sentiment === "positive") b.positive++;
+      }
     }
     const sparkline = Array.from(bucketMap.entries())
       .sort(([a], [b]) => a - b)
@@ -137,6 +149,8 @@ export async function GET(req: NextRequest) {
   const facebook = buildPlatformData("facebook");
   const tiktok = buildPlatformData("tiktok");
   const threads = buildPlatformData("threads");
+  const appstore = buildPlatformData("appstore");
+  const playstore = buildPlatformData("playstore");
 
   const totalNeg = rows.filter((r) => r.sentiment === "negative").length;
   const totalPos = rows.filter((r) => r.sentiment === "positive").length;
@@ -164,5 +178,7 @@ export async function GET(req: NextRequest) {
     facebook,
     tiktok,
     threads,
+    appstore,
+    playstore,
   });
 }

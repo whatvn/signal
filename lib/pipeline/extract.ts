@@ -13,9 +13,9 @@ async function fetchPostWithComments(post: RawPost, now: number): Promise<PostWi
   const rawComments =
     post.platform === "tiktok"
       ? await socialfetch.getTikTokComments(post.sourceUrl)
-      : post.platform === "threads"
-      ? []
-      : await socialfetch.getFacebookComments(post.sourceUrl ?? "", post.feedbackId);
+      : post.platform === "facebook"
+      ? await socialfetch.getFacebookComments(post.sourceUrl ?? "", post.feedbackId)
+      : [];
 
   if (rawComments.length > 0) {
     try {

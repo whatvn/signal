@@ -23,18 +23,20 @@ export async function GET() {
 
   const rows = await db
     .select({
-      classifiedAt: classifications.classifiedAt,
+      publishedAt: posts.publishedAt,
+      fetchedAt: posts.fetchedAt,
       subcategory: classifications.subcategory,
     })
     .from(classifications)
     .innerJoin(posts, eq(posts.id, classifications.postId))
-    .where(gte(classifications.classifiedAt, since));
+    .where(gte(posts.publishedAt, since));
 
-  // Group into hourly buckets
+  // Group into hourly buckets by content publish time
   const buckets = new Map<string, Record<string, number>>();
 
   for (const row of rows) {
-    const hourTs = Math.floor(row.classifiedAt / 3600) * 3600;
+    const ts = row.publishedAt ?? row.fetchedAt;
+    const hourTs = Math.floor(ts / 3600) * 3600;
     const hourKey = new Date(hourTs * 1000).toISOString();
 
     if (!buckets.has(hourKey)) {

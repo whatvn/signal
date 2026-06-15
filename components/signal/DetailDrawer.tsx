@@ -28,7 +28,7 @@ interface Props {
   open: boolean;
   category: string;
   categoryLabel: string;
-  platform: "facebook" | "tiktok" | "threads";
+  platform: "facebook" | "tiktok" | "threads" | "appstore" | "playstore";
   count: number;
   sentiment: "negative" | "positive";
   window: string;

@@ -16,8 +16,6 @@ ENV PORT=8080
 COPY public ./public
 COPY .next/standalone ./
 COPY .next/static ./.next/static
-COPY scripts/init-db.mjs ./scripts/init-db.mjs
-COPY scripts/apply-patches.mjs ./scripts/apply-patches.mjs
 
 # Overwrite Mac-compiled binary with linux-compiled one
 COPY --from=native-deps /build/node_modules/better-sqlite3 ./node_modules/better-sqlite3

@@ -33,7 +33,7 @@ async function sfetch(
 export const socialfetch = {
   async searchTikTok(keyword: string, cursor?: string): Promise<{ posts: RawPost[]; nextCursor: string | null }> {
     try {
-      const params: Record<string, string> = { query: keyword, trim: "false" };
+      const params: Record<string, string> = { query: keyword, trim: "false", region: "VN" };
       if (cursor) params.cursor = cursor;
 
       const data = (await sfetch("/v1/tiktok/search", params)) as {

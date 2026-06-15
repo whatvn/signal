@@ -1,6 +1,6 @@
 export interface RawPost {
   id: string;
-  platform: "facebook" | "tiktok" | "threads";
+  platform: "facebook" | "tiktok" | "threads" | "appstore" | "playstore";
   authorHandle: string;
   contentText: string;
   sourceUrl: string;

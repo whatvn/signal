@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { posts, pipelineState } from "@/db/schema";
 import { socialfetch } from "@/lib/socialfetch/client";
+import { fetchAppleReviews, fetchPlayStoreReviews } from "@/lib/socialfetch/appreviews";
 import { RawPost } from "@/lib/socialfetch/types";
 import { eq, inArray } from "drizzle-orm";
 import { Emit } from "./runner";
@@ -16,16 +17,22 @@ function filterByCutoff(rawPosts: RawPost[], cutoff: number): RawPost[] {
   return rawPosts.filter((p) => p.publishedAt == null || p.publishedAt >= cutoff);
 }
 
+// Returns true if any post with a known date is newer than cutoff — used for TikTok (drops no-createdAt posts)
+function hasKnownContentNewerThan(rawPosts: RawPost[], cutoff: number): boolean {
+  return rawPosts.some((p) => p.publishedAt != null && p.publishedAt >= cutoff);
+}
+
 // Returns true if any post in the page is newer than cutoff — worth fetching next page
 function hasContentNewerThan(rawPosts: RawPost[], cutoff: number): boolean {
   return rawPosts.some((p) => p.publishedAt == null || p.publishedAt >= cutoff);
 }
 
-export async function fetchStage(keyword: string, emit: Emit): Promise<RawPost[]> {
-  emit("info", `Keyword: "${keyword}"`);
+export async function fetchStage(keyword: string, emit: Emit, platform?: string): Promise<RawPost[]> {
+  emit("info", `Keyword: "${keyword}"${platform ? ` · platform: ${platform}` : ""}`);
 
-  // Determine fetch window: last completed run timestamp or 7 days ago for first run
-  const [stateRow] = await db.select().from(pipelineState).where(eq(pipelineState.keyword, keyword));
+  // Per-platform runs use their own state key so they don't share the global cutoff
+  const stateKey = platform ? `${keyword}::${platform}` : keyword;
+  const [stateRow] = await db.select().from(pipelineState).where(eq(pipelineState.keyword, stateKey));
   const lastCompletedAt = stateRow?.lastCompletedAt ?? null;
   const SEVEN_DAYS_AGO = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
   const cutoff = lastCompletedAt ?? SEVEN_DAYS_AGO;
@@ -39,78 +46,137 @@ export async function fetchStage(keyword: string, emit: Emit): Promise<RawPost[]
   const threadsStartDate = toDateStr(new Date(cutoff * 1000));
   const threadsEndDate = toDateStr(new Date());
 
-  // Use current timestamp as cursor for TikTok hashtag search (returns newest content first)
-  const initialCursor = String(Date.now());
+  const only = platform; // undefined means fetch all
 
-  emit("info", "Fetching TikTok keyword p1 + hashtag p1 + Threads…");
-  const [tt1, ht1, th1] = await Promise.allSettled([
-    socialfetch.searchTikTok(keyword),
-    socialfetch.searchTikTokHashtag(keyword, initialCursor),
-    socialfetch.searchThreads(keyword, threadsStartDate, threadsEndDate),
+  const shouldFetch = (p: string) => !only || only === p;
+
+  // --- TikTok ---
+  let tt1Result = { posts: [] as RawPost[], nextCursor: null as string | null };
+  let ht1Result = { posts: [] as RawPost[], nextCursor: null as string | null };
+  // --- Threads ---
+  let th1Result = { posts: [] as RawPost[], nextCursor: null as string | null };
+  // --- Facebook ---
+  let fb1Result = { posts: [] as RawPost[], nextCursor: null as string | null };
+  // --- App stores ---
+  let asReviews: RawPost[] = [];
+  let gpReviews: RawPost[] = [];
+
+  const sources: string[] = [];
+  if (shouldFetch("tiktok")) sources.push("TikTok");
+  if (shouldFetch("threads")) sources.push("Threads");
+  if (shouldFetch("facebook")) sources.push("Facebook");
+  if (shouldFetch("appstore")) sources.push("App Store");
+  if (shouldFetch("playstore")) sources.push("Play Store");
+  emit("info", `Fetching: ${sources.join(" + ")} p1…`);
+
+  const tasks = await Promise.allSettled([
+    shouldFetch("tiktok") ? socialfetch.searchTikTok(keyword) : null,
+    shouldFetch("tiktok") ? socialfetch.searchTikTokHashtag(keyword) : null,
+    shouldFetch("threads") ? socialfetch.searchThreads(keyword, threadsStartDate, threadsEndDate) : null,
+    shouldFetch("facebook") ? socialfetch.getFacebookPagePosts(ZALOPAY_FB_PAGE) : null,
+    shouldFetch("appstore") ? fetchAppleReviews(cutoff) : null,
+    shouldFetch("playstore") ? fetchPlayStoreReviews(cutoff) : null,
   ]);
 
-  const tt1Result = tt1.status === "fulfilled" ? tt1.value : { posts: [], nextCursor: null };
-  const ht1Result = ht1.status === "fulfilled" ? ht1.value : { posts: [], nextCursor: null };
-  const th1Result = th1.status === "fulfilled" ? th1.value : { posts: [], nextCursor: null };
+  const [r_tt1, r_ht1, r_th1, r_fb1, r_as1, r_gp1] = tasks;
 
-  if (tt1.status === "rejected") emit("error", `TikTok keyword p1 failed: ${tt1.reason}`);
-  else emit("info", `TikTok keyword p1: ${tt1Result.posts.length} posts`);
+  if (shouldFetch("tiktok")) {
+    if (r_tt1.status === "rejected") emit("error", `TikTok keyword p1 failed: ${r_tt1.reason}`);
+    else if (r_tt1.value) { tt1Result = r_tt1.value; emit("info", `TikTok keyword p1: ${tt1Result.posts.length} posts`); }
 
-  if (ht1.status === "rejected") emit("error", `TikTok hashtag p1 failed: ${ht1.reason}`);
-  else emit("info", `TikTok hashtag p1: ${ht1Result.posts.length} posts`);
-
-  if (th1.status === "rejected") emit("error", `Threads search failed: ${th1.reason}`);
-  else emit("info", `Threads: ${th1Result.posts.length} posts`);
-
-  // Only fetch page 2 if page 1 had content newer than the cutoff
-  const fetchTTp2 = tt1Result.nextCursor && hasContentNewerThan(tt1Result.posts, cutoff);
-  const fetchHTp2 = ht1Result.nextCursor && hasContentNewerThan(ht1Result.posts, cutoff);
-
-  emit("info", "Fetching TikTok p2 + Facebook p1…");
-  const [tt2, ht2, fb1] = await Promise.allSettled([
-    fetchTTp2
-      ? socialfetch.searchTikTok(keyword, tt1Result.nextCursor!)
-      : Promise.resolve({ posts: [], nextCursor: null }),
-    fetchHTp2
-      ? socialfetch.searchTikTokHashtag(keyword, ht1Result.nextCursor!)
-      : Promise.resolve({ posts: [], nextCursor: null }),
-    socialfetch.getFacebookPagePosts(ZALOPAY_FB_PAGE),
-  ]);
-
-  const fb1Result = fb1.status === "fulfilled" ? fb1.value : { posts: [], nextCursor: null };
-
-  if (tt2.status === "rejected") emit("warn", `TikTok keyword p2 failed: ${tt2.reason}`);
-  else if (tt2.value.posts.length) emit("info", `TikTok keyword p2: ${tt2.value.posts.length} posts`);
-
-  if (ht2.status === "rejected") emit("warn", `TikTok hashtag p2 failed: ${ht2.reason}`);
-  else if (ht2.value.posts.length) emit("info", `TikTok hashtag p2: ${ht2.value.posts.length} posts`);
-
-  if (fb1.status === "rejected") emit("error", `Facebook p1 failed: ${fb1.reason}`);
-  else emit("info", `Facebook p1: ${fb1Result.posts.length} posts`);
-
-  // Facebook page 2 only if page 1 had recent content
-  let fb2 = { posts: [] as RawPost[], nextCursor: null as string | null };
-  if (fb1Result.nextCursor && hasContentNewerThan(fb1Result.posts, cutoff)) {
-    emit("info", "Fetching Facebook p2…");
-    fb2 = await socialfetch
-      .getFacebookPagePosts(ZALOPAY_FB_PAGE, fb1Result.nextCursor)
-      .catch((err) => {
-        emit("warn", `Facebook p2 failed: ${err}`);
-        return { posts: [], nextCursor: null };
-      });
-    if (fb2.posts.length) emit("info", `Facebook p2: ${fb2.posts.length} posts`);
+    if (r_ht1.status === "rejected") emit("error", `TikTok hashtag p1 failed: ${r_ht1.reason}`);
+    else if (r_ht1.value) { ht1Result = r_ht1.value; emit("info", `TikTok hashtag p1: ${ht1Result.posts.length} posts`); }
   }
+  if (shouldFetch("threads")) {
+    if (r_th1.status === "rejected") emit("error", `Threads search failed: ${r_th1.reason}`);
+    else if (r_th1.value) { th1Result = r_th1.value; emit("info", `Threads: ${th1Result.posts.length} posts`); }
+  }
+  if (shouldFetch("facebook")) {
+    if (r_fb1.status === "rejected") emit("error", `Facebook p1 failed: ${r_fb1.reason}`);
+    else if (r_fb1.value) { fb1Result = r_fb1.value; emit("info", `Facebook p1: ${fb1Result.posts.length} posts`); }
+  }
+  if (shouldFetch("appstore")) {
+    if (r_as1.status === "rejected") emit("error", `Apple App Store failed: ${r_as1.reason}`);
+    else if (r_as1.value) { asReviews = r_as1.value as RawPost[]; emit("info", `Apple App Store: ${asReviews.length} reviews`); }
+  }
+  if (shouldFetch("playstore")) {
+    if (r_gp1.status === "rejected") emit("error", `Google Play Store failed: ${r_gp1.reason}`);
+    else if (r_gp1.value) { gpReviews = r_gp1.value as RawPost[]; emit("info", `Google Play Store: ${gpReviews.length} reviews`); }
+  }
+
+  // TikTok keyword pages 2–7 sequentially; skip posts with no createdAt
+  const ttKeywordExtra: RawPost[] = [];
+  if (shouldFetch("tiktok")) {
+    let ttCursor = tt1Result.nextCursor;
+    let ttPage = 2;
+    while (ttCursor && hasKnownContentNewerThan([...tt1Result.posts, ...ttKeywordExtra], cutoff) && ttPage <= 7) {
+      emit("info", `Fetching TikTok keyword p${ttPage}…`);
+      const ttNext = await socialfetch
+        .searchTikTok(keyword, ttCursor)
+        .catch((err) => {
+          emit("warn", `TikTok keyword p${ttPage} failed: ${err}`);
+          return { posts: [] as RawPost[], nextCursor: null as string | null };
+        });
+      if (ttNext.posts.length) emit("info", `TikTok keyword p${ttPage}: ${ttNext.posts.length} posts`);
+      ttKeywordExtra.push(...ttNext.posts);
+      ttCursor = ttNext.nextCursor;
+      ttPage++;
+    }
+  }
+
+  // TikTok hashtag pages 2–7 sequentially; skip posts with no createdAt
+  const ttHashtagExtra: RawPost[] = [];
+  if (shouldFetch("tiktok")) {
+    let htCursor = ht1Result.nextCursor;
+    let htPage = 2;
+    while (htCursor && hasKnownContentNewerThan([...ht1Result.posts, ...ttHashtagExtra], cutoff) && htPage <= 7) {
+      emit("info", `Fetching TikTok hashtag p${htPage}…`);
+      const htNext = await socialfetch
+        .searchTikTokHashtag(keyword, htCursor)
+        .catch((err) => {
+          emit("warn", `TikTok hashtag p${htPage} failed: ${err}`);
+          return { posts: [] as RawPost[], nextCursor: null as string | null };
+        });
+      if (htNext.posts.length) emit("info", `TikTok hashtag p${htPage}: ${htNext.posts.length} posts`);
+      ttHashtagExtra.push(...htNext.posts);
+      htCursor = htNext.nextCursor;
+      htPage++;
+    }
+  }
+
+  // Facebook pages 2–7
+  const fbExtraPosts: RawPost[] = [];
+  if (shouldFetch("facebook")) {
+    let fbCursor = fb1Result.nextCursor;
+    let fbPage = 2;
+    while (fbCursor && hasContentNewerThan(fb1Result.posts.concat(fbExtraPosts), cutoff) && fbPage <= 7) {
+      emit("info", `Fetching Facebook p${fbPage}…`);
+      const fbNext = await socialfetch
+        .getFacebookPagePosts(ZALOPAY_FB_PAGE, fbCursor)
+        .catch((err) => {
+          emit("warn", `Facebook p${fbPage} failed: ${err}`);
+          return { posts: [] as RawPost[], nextCursor: null as string | null };
+        });
+      if (fbNext.posts.length) emit("info", `Facebook p${fbPage}: ${fbNext.posts.length} posts`);
+      fbExtraPosts.push(...fbNext.posts);
+      fbCursor = fbNext.nextCursor;
+      fbPage++;
+    }
+  }
+
+  // TikTok: drop posts with no createdAt before aggregation
+  const ttAllPosts = [...tt1Result.posts, ...ttKeywordExtra, ...ht1Result.posts, ...ttHashtagExtra]
+    .filter((p) => p.publishedAt != null);
 
   // Aggregate and apply cutoff filter across all sources
   const allRaw: RawPost[] = filterByCutoff(
     [
-      ...tt1Result.posts,
-      ...(tt2.status === "fulfilled" ? tt2.value.posts : []),
-      ...ht1Result.posts,
-      ...(ht2.status === "fulfilled" ? ht2.value.posts : []),
+      ...ttAllPosts,
       ...fb1Result.posts,
-      ...fb2.posts,
+      ...fbExtraPosts,
       ...th1Result.posts,
+      ...asReviews,
+      ...gpReviews,
     ].filter((p) => p.id && p.contentText),
     cutoff
   );
@@ -158,12 +224,6 @@ export async function fetchStage(keyword: string, emit: Emit): Promise<RawPost[]
       emit("info", `  [${p.platform}] ${ts}  ${p.sourceUrl ?? "(no url)"}`);
     }
   }
-
-  // Persist pipeline state so next run knows where to start
-  await db
-    .insert(pipelineState)
-    .values({ keyword, lastCompletedAt: now })
-    .onConflictDoUpdate({ target: pipelineState.keyword, set: { lastCompletedAt: now } });
 
   console.log(
     `[Fetch] ${newPosts.length} new / ${allRaw.length - newPosts.length} deduped / ${allRaw.length} total`
