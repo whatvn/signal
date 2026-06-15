@@ -1,5 +1,7 @@
 # Signal
 
+![Signal Dashboard](./image/signal.png)
+
 Social media listening dashboard for everyone. Collects posts from TikTok, Threads, Facebook, App Store, and Google Play, then uses an LLM to classify sentiment and surface alerts when issue categories spike.
 
 ## What it does
