@@ -5,6 +5,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+const PROFILE_SETTINGS_LOCKED = true;
+
+function lockedResponse() {
+  return NextResponse.json({ error: "profile settings changes are temporarily disabled" }, { status: 403 });
+}
+
 function parseProfile(row: typeof profiles.$inferSelect) {
   return {
     id: row.id,
@@ -30,6 +36,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+  if (PROFILE_SETTINGS_LOCKED) return lockedResponse();
+
   const id = parseInt(params.id, 10);
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "invalid body" }, { status: 400 });
@@ -62,6 +70,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  if (PROFILE_SETTINGS_LOCKED) return lockedResponse();
+
   const id = parseInt(params.id, 10);
 
   const all = await db.select().from(profiles);

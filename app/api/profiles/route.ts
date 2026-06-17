@@ -5,6 +5,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+const PROFILE_SETTINGS_LOCKED = true;
+
+function lockedResponse() {
+  return NextResponse.json({ error: "profile settings changes are temporarily disabled" }, { status: 403 });
+}
+
 function parseProfile(row: typeof profiles.$inferSelect) {
   return {
     id: row.id,
@@ -28,6 +34,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (PROFILE_SETTINGS_LOCKED) return lockedResponse();
+
   const body = await req.json().catch(() => null);
   if (!body?.name) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });

@@ -5,6 +5,8 @@ import { TopBar } from "@/components/signal/TopBar";
 import { ProfileForm, ProfileFormData } from "@/components/settings/ProfileForm";
 import { IconPlus, IconPencil, IconTrash, IconCheck } from "@tabler/icons-react";
 
+const PROFILE_SETTINGS_LOCKED = true;
+
 interface Profile extends ProfileFormData {
   id: number;
   createdAt: number;
@@ -93,16 +95,27 @@ export default function SettingsPage() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div>
             <h1 style={{ fontSize: 15, fontWeight: 700, color: "#1a1a1a", margin: 0 }}>Profiles</h1>
-            <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 3 }}>Manage monitoring profiles — each defines which sources and keywords to track.</p>
+            <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 3 }}>
+              Manage monitoring profiles — each defines which sources and keywords to track.
+              <br />
+              <strong>Profile change temporarily disabled to prevent naughty kid from doing something wrong</strong>
+            </p>
           </div>
           <button
             onClick={() => { setAdding(true); setEditing(null); }}
-            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "#fff", backgroundColor: "#1D9E75", border: "none", borderRadius: 6, padding: "7px 14px", cursor: "pointer" }}
+            disabled={PROFILE_SETTINGS_LOCKED}
+            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "#fff", backgroundColor: PROFILE_SETTINGS_LOCKED ? "#9ca3af" : "#1D9E75", border: "none", borderRadius: 6, padding: "7px 14px", cursor: PROFILE_SETTINGS_LOCKED ? "not-allowed" : "pointer" }}
           >
             <IconPlus size={13} />
             Add Profile
           </button>
         </div>
+
+        {PROFILE_SETTINGS_LOCKED && (
+          <div style={{ fontSize: 12, color: "#6b7280", backgroundColor: "#fff", border: "0.5px solid #e5e7eb", borderRadius: 6, padding: "10px 12px", marginBottom: 16 }}>
+            Profile settings changes are temporarily disabled. Existing profiles remain available for dashboard filtering and pipeline runs.
+          </div>
+        )}
 
         {error && (
           <div style={{ fontSize: 12, color: "#e53e3e", backgroundColor: "#FFF5F5", border: "0.5px solid #feb2b2", borderRadius: 6, padding: "8px 12px", marginBottom: 16 }}>
@@ -112,7 +125,7 @@ export default function SettingsPage() {
         )}
 
         {/* Add form */}
-        {adding && (
+        {adding && !PROFILE_SETTINGS_LOCKED && (
           <div style={{ backgroundColor: "#fff", border: "0.5px solid #e5e7eb", borderRadius: 10, padding: 20, marginBottom: 16 }}>
             <h2 style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 16 }}>New Profile</h2>
             <ProfileForm
@@ -129,7 +142,7 @@ export default function SettingsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {profiles.map((profile) => (
               <div key={profile.id} style={{ backgroundColor: "#fff", border: "0.5px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
-                {editing?.id === profile.id ? (
+                {editing?.id === profile.id && !PROFILE_SETTINGS_LOCKED ? (
                   <div style={{ padding: 20 }}>
                     <h2 style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 16 }}>Edit: {profile.name}</h2>
                     <ProfileForm
@@ -155,7 +168,8 @@ export default function SettingsPage() {
                           <button
                             onClick={() => handleSetDefault(profile.id)}
                             title="Set as default"
-                            style={{ ...inputStyle, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                            disabled={PROFILE_SETTINGS_LOCKED}
+                            style={{ ...inputStyle, cursor: PROFILE_SETTINGS_LOCKED ? "not-allowed" : "pointer", opacity: PROFILE_SETTINGS_LOCKED ? 0.55 : 1, display: "flex", alignItems: "center", gap: 4 }}
                           >
                             <IconCheck size={12} />
                             <span>Set default</span>
@@ -164,7 +178,8 @@ export default function SettingsPage() {
                         <button
                           onClick={() => { setEditing(profile); setAdding(false); }}
                           title="Edit"
-                          style={{ ...inputStyle, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                          disabled={PROFILE_SETTINGS_LOCKED}
+                          style={{ ...inputStyle, cursor: PROFILE_SETTINGS_LOCKED ? "not-allowed" : "pointer", opacity: PROFILE_SETTINGS_LOCKED ? 0.55 : 1, display: "flex", alignItems: "center", gap: 4 }}
                         >
                           <IconPencil size={12} />
                           <span>Edit</span>
@@ -172,7 +187,8 @@ export default function SettingsPage() {
                         <button
                           onClick={() => handleDelete(profile.id)}
                           title="Delete"
-                          style={{ ...inputStyle, cursor: "pointer", color: "#c53030", display: "flex", alignItems: "center", gap: 4 }}
+                          disabled={PROFILE_SETTINGS_LOCKED}
+                          style={{ ...inputStyle, cursor: PROFILE_SETTINGS_LOCKED ? "not-allowed" : "pointer", opacity: PROFILE_SETTINGS_LOCKED ? 0.55 : 1, color: "#c53030", display: "flex", alignItems: "center", gap: 4 }}
                         >
                           <IconTrash size={12} />
                           <span>Delete</span>
